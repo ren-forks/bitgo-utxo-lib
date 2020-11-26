@@ -13,13 +13,13 @@ var blake2b = require('blake2b')
 
 var zcashVersion = require('./forks/zcash/version')
 
-function varSliceSize (someScript) {
+function varSliceSize(someScript) {
   var length = someScript.length
 
   return varuint.encodingLength(length) + length
 }
 
-function vectorSize (someVector) {
+function vectorSize(someVector) {
   var length = someVector.length
 
   return varuint.encodingLength(length) + someVector.reduce(function (sum, witness) {
@@ -28,7 +28,7 @@ function vectorSize (someVector) {
 }
 
 // By default, assume is a bitcoin transaction
-function Transaction (network = networks.bitcoin) {
+function Transaction(network = networks.bitcoin) {
   this.version = 1
   this.locktime = 0
   this.ins = []
@@ -48,6 +48,8 @@ function Transaction (network = networks.bitcoin) {
     this.vShieldedSpend = []
     this.vShieldedOutput = []
     this.bindingSig = 0
+    // Must be updated along with version
+    this.consensusBranchId = network.consensusBranchId[this.version]
   }
   if (coins.isDash(network)) {
     // Dash version = 3
@@ -97,6 +99,7 @@ Transaction.fromBuffer = function (buffer, network = networks.bitcoin, __noStric
     if (!network.consensusBranchId.hasOwnProperty(tx.version)) {
       throw new Error('Unsupported Zcash transaction')
     }
+    tx.consensusBranchId = network.consensusBranchId[tx.version]
     bufferReader = new ZcashBufferReader(
       bufferReader.buffer,
       bufferReader.offset,
@@ -117,8 +120,8 @@ Transaction.fromBuffer = function (buffer, network = networks.bitcoin, __noStric
 
   var hasWitnesses = false
   if (marker === Transaction.ADVANCED_TRANSACTION_MARKER &&
-      flag === Transaction.ADVANCED_TRANSACTION_FLAG &&
-      !coins.isZcash(network)) {
+    flag === Transaction.ADVANCED_TRANSACTION_FLAG &&
+    !coins.isZcash(network)) {
     hasWitnesses = true
   } else {
     bufferReader.offset -= 2
@@ -399,6 +402,9 @@ Transaction.prototype.clone = function () {
     newTx.extraPayload = this.extraPayload
   }
 
+  if (coins.isZcash(this.network)) {
+    newTx.consensusBranchId = this.consensusBranchId
+  }
   if (this.isOverwinterCompatible()) {
     newTx.overwintered = this.overwintered
     newTx.versionGroupId = this.versionGroupId
@@ -734,7 +740,7 @@ Transaction.prototype.hashForZcashSignature = function (inIndex, prevOutScript, 
     var personalization = Buffer.alloc(16)
     var prefix = 'ZcashSigHash'
     personalization.write(prefix)
-    personalization.writeUInt32LE(this.network.consensusBranchId[this.version], prefix.length)
+    personalization.writeUInt32LE(this.consensusBranchId, prefix.length)
 
     return this.getBlake2bHash(bufferWriter.buffer, personalization)
   }
@@ -836,7 +842,7 @@ Transaction.prototype.__toBuffer = function (buffer, initialOffset, __allowWitne
     ? new ZcashBufferWriter(buffer, initialOffset || 0)
     : new BufferWriter(buffer, initialOffset || 0)
 
-  function writeUInt16 (i) {
+  function writeUInt16(i) {
     bufferWriter.offset = bufferWriter.buffer.writeUInt16LE(i, bufferWriter.offset)
   }
 
